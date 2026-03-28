@@ -1,0 +1,153 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+
+local player = Players.LocalPlayer
+local camera = workspace.CurrentCamera
+local mouse = player:GetMouse()
+
+local aiming = false
+local FOV = 150
+local lockedTarget = nil
+
+local espObjects = {}
+
+local fovCircle = Drawing.new("Circle")
+fovCircle.Radius = FOV
+fovCircle.Thickness = 2
+fovCircle.Filled = false
+fovCircle.Transparency = 1
+fovCircle.Visible = true
+
+local rainbowSpeed = 2.8
+
+local function createESP(plr)
+	if plr == player then return end
+	local box = Drawing.new("Square")
+	box.Thickness = 2
+	box.Filled = false
+	box.Transparency = 1
+
+	local name = Drawing.new("Text")
+	name.Size = 14
+	name.Color = Color3.fromRGB(255, 255, 255)
+	name.Center = true
+	name.Outline = true
+	name.Transparency = 1
+
+	espObjects[plr] = {box = box, name = name}
+end
+
+local function removeESP(plr)
+	if espObjects[plr] then
+		espObjects[plr].box:Remove()
+		espObjects[plr].name:Remove()
+		espObjects[plr] = nil
+	end
+end
+
+for _, plr in ipairs(Players:GetPlayers()) do
+	createESP(plr)
+end
+Players.PlayerAdded:Connect(createESP)
+Players.PlayerRemoving:Connect(removeESP)
+
+local function getClosestTarget()
+	local closest = nil
+	local shortest = FOV
+
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if plr ~= player and plr.Character then
+			local head = plr.Character:FindFirstChild("Head")
+			local humanoid = plr.Character:FindFirstChild("Humanoid")
+
+			if head and humanoid and humanoid.Health > 0 then
+				local pos, onScreen = camera:WorldToViewportPoint(head.Position)
+
+				if onScreen then
+					local dist = (Vector2.new(pos.X, pos.Y) - Vector2.new(mouse.X, mouse.Y)).Magnitude
+
+					if dist < shortest then
+						shortest = dist
+						closest = head
+					end
+				end
+			end
+		end
+	end
+	return closest
+end
+
+local function targetIsAlive(target)
+	if not target or not target.Parent then return false end
+	local humanoid = target.Parent:FindFirstChild("Humanoid")
+	return humanoid and humanoid.Health > 0
+end
+
+RunService.RenderStepped:Connect(function()
+	local hue = (os.clock() * rainbowSpeed) % 1
+	local rainbowColor = Color3.fromHSV(hue, 1, 1)
+
+	fovCircle.Position = Vector2.new(mouse.X, mouse.Y)
+	fovCircle.Radius = FOV
+	fovCircle.Color = rainbowColor
+
+	for plr, drawings in pairs(espObjects) do
+		local char = plr.Character
+		if char and char:FindFirstChild("HumanoidRootPart") then
+			local hrp = char.HumanoidRootPart
+			local pos, visible = camera:WorldToViewportPoint(hrp.Position)
+
+			if visible then
+				local top = camera:WorldToViewportPoint(hrp.Position + Vector3.new(0, 3, 0))
+				local bottom = camera:WorldToViewportPoint(hrp.Position - Vector3.new(0, 3, 0))
+				local height = (top.Y - bottom.Y) * 1.1
+				local width = height * 0.6
+
+				drawings.box.Size = Vector2.new(width, height)
+				drawings.box.Position = Vector2.new(pos.X - width/2, pos.Y - height/2)
+				drawings.box.Color = rainbowColor
+				drawings.box.Visible = true
+
+				drawings.name.Position = Vector2.new(pos.X, pos.Y - height/2 - 18)
+				drawings.name.Text = plr.Name
+				drawings.name.Visible = true
+			else
+				drawings.box.Visible = false
+				drawings.name.Visible = false
+			end
+		else
+			drawings.box.Visible = false
+			drawings.name.Visible = false
+		end
+	end
+
+	-- === AIMLOCK ===
+	if aiming then
+		if not targetIsAlive(lockedTarget) then
+			lockedTarget = nil
+		end
+
+		if lockedTarget then
+			camera.CFrame = CFrame.new(camera.CFrame.Position, lockedTarget.Position)
+		end
+	else
+		lockedTarget = nil
+	end
+end)
+
+UserInputService.InputBegan:Connect(function(input, processed)
+	if input.UserInputType == Enum.UserInputType.MouseButton2 then
+		aiming = true
+		lockedTarget = getClosestTarget()
+	end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton2 then
+		aiming = false
+		lockedTarget = nil
+	end
+end)
+
+print("Camlock cargado — snap directo a la cabeza")
